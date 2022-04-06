@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+      "target": "es2020",
+      "module": "CommonJS",
+      "lib": ["es2020", "ESNext", "DOM"],
+      "moduleResolution": "node",
+      "esModuleInterop": true,
+      "baseUrl": "./",
+      "paths": {
+        "@flipcards/*": ["packages/*"]
+      },
+      "jsx": "react",
+      "experimentalDecorators": true,
+      "resolveJsonModule": true
+    },
+    "exclude": ["node_modules", "**/node_modules/*", "dist"]
+}
