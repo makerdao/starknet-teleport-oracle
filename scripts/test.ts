@@ -61,4 +61,8 @@ async function fetchAttestations(txHash: string): Promise<{
   };
 }
 
-fetchAttestations(process.argv[2]).then(console.log);
+if (process.argv.length === 3) {
+  fetchAttestations(process.argv[2]).then(console.log);
+} else {
+  console.log("Add transaction hash to arguments");
+}
