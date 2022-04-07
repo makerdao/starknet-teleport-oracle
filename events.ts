@@ -172,7 +172,7 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
 
   const oracleMnemonic = getRequiredEnv("ORACLE_MNEMONIC");
   const oracleWallet = Wallet.fromMnemonic(oracleMnemonic);
-  const { signatures } = await signWormholeData(message, [oracleWallet, oracleWallet]);
+  const { signatures } = await signWormholeData(message, [oracleWallet]);
   const hash = keccak256(message).slice(2);
   return signatures.map(signature => ({
     "signatures": {
