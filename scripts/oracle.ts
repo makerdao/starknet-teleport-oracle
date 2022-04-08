@@ -68,23 +68,6 @@ async function transaction(
   return response.data as Transaction;
 }
 
-function eventsFromTransaction({
-  block_hash,
-  transaction_hash,
-  parent_block_hash,
-  events,
-  transaction_index,
-}: TransactionSummary): Array<Event> {
-  return events.map((e, i) => ({
-    block_hash,
-    parent_block_hash,
-    transaction_hash,
-    transaction_index,
-    log_index: i,
-    ...e,
-  }));
-}
-
 const MASK_250 = BigInt(2 ** 250 - 1);
 function getSelectorFromName(name: string) {
   return `0x${(BigInt(keccak256(Buffer.from(name))) % MASK_250).toString(16)}`;
@@ -155,17 +138,22 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
 }
 
 http.createServer(async (req, res) => {
-  const params = url.parse(req.url, true).query;
-  assert(params.type === "wormhole");
-  const txHash = params.index.toString();
-  
-  const tx = await transaction(alphaGoerli, txHash);
-  const events = eventsFromTransaction(tx);
-  const wormholeEvent = events.filter(filterEvent)[0];
-  const attestations = await attestationsFromEvent(wormholeEvent);
-  res.write(JSON.stringify(attestations));
-  res.end();
-}).listen(8080);
+  try {
+    const params = url.parse(req.url, true).query;
+    assert(params.type === "wormhole");
+    const txHash = params.index.toString();
 
-const alphaGoerli = "alpha4.starknet.io";
-const alphaMainet = "alpha-mainnet.starknet.io";
+    const sequencer = getRequiredEnv("STARKNET_SEQUENCER");
+    const tx = await transaction(sequencer, txHash);
+    const wormholeEvent = tx.events.filter(filterEvent)[0];
+    if (!wormholeEvent) {
+      throw Error("Wormhole event not found");
+    }
+    const attestations = await attestationsFromEvent(wormholeEvent);
+    res.write(JSON.stringify(attestations));
+    res.end();
+  } catch (err) {
+    res.write(JSON.stringify(null));
+    res.end();
+  }
+}).listen(8080);
