@@ -5,6 +5,7 @@ import url from "url";
 import assert from "assert";
 import { BigNumber, Wallet, utils } from "ethers";
 import { arrayify, hashMessage, keccak256 } from "ethers/lib/utils";
+import logger from "log-tracking";
 import * as dotenv from "dotenv";
 dotenv.config();
 
@@ -145,30 +146,34 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
 
 const sequencer = getRequiredEnv("STARKNET_SEQUENCER");
 console.log(`Starting oracle on ${sequencer}`);
-http.createServer(async (req, res) => {
-  console.log();
-  try {
-    const params = url.parse(req.url, true).query;
-    if (params.type !== "wormhole") {
-      throw new Error("Invalid type");
-    }
-    if (!params.index) {
-      throw new Error("Index not specified");
-    }
-    const txHash = params.index.toString();
+const nlogger = logger.getLogger("node_server");
+http.createServer((req, res) => {
+  logger.startTracking(req, async (err, data) => {
+    console.log();
+    try {
+      const params = url.parse(req.url, true).query;
+      if (params.type !== "wormhole") {
+        throw new Error("Invalid type");
+      }
+      if (!params.index) {
+        throw new Error("Index not specified");
+      }
+      const txHash = params.index.toString();
 
-    const tx = await transaction(sequencer, txHash);
-    const wormholeEvent = tx.events.filter(filterEvent)[0];
-    if (!wormholeEvent) {
-      throw Error("Wormhole event not found");
+      const tx = await transaction(sequencer, txHash);
+      const wormholeEvent = tx.events.filter(filterEvent)[0];
+      if (!wormholeEvent) {
+        throw Error("Wormhole event not found");
+      }
+      const attestations = await attestationsFromEvent(wormholeEvent);
+      console.log(`Sending attestations for wormhole ${attestations[0].data.hash}`);
+      res.setHeader("Content-Type", "application/json");
+      res.write(JSON.stringify(attestations));
+      res.end();
+    } catch (err) {
+      console.error(`ERROR: ${err.message}`);
+      res.write(JSON.stringify(null));
+      res.end();
     }
-    const attestations = await attestationsFromEvent(wormholeEvent);
-    console.log(`Sending attestations for wormhole ${attestations[0].data.hash}`);
-    res.write(JSON.stringify(attestations));
-    res.end();
-  } catch (err) {
-    console.log(`ERROR: ${err.message}`);
-    res.write(JSON.stringify(null));
-    res.end();
-  }
+  });
 }).listen(8080);
