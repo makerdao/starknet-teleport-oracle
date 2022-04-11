@@ -153,6 +153,7 @@ http.createServer(async (req, res) => {
     res.write(JSON.stringify(attestations));
     res.end();
   } catch (err) {
+    console.log(err.message);
     res.write(JSON.stringify(null));
     res.end();
   }

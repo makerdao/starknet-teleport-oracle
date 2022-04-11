@@ -10,8 +10,8 @@
     "typescript": "^4.5.5"
   },
   "scripts": {
-    "oracle": "ts-node ./scripts/oracle.ts",
-    "test": "ts-node ./scripts/test.ts",
+    "oracle": "esr ./scripts/oracle.ts",
+    "test": "esr ./scripts/test.ts",
     "prettier:fix": "prettier --write 'scripts/**/*.{js,jsx,ts,tsx}'"
   },
   "dependencies": {
@@ -19,6 +19,7 @@
     "assert": "^2.0.0",
     "axios": "^0.26.1",
     "dotenv": "^16.0.0",
+    "esbuild": "^0.14.34",
     "ethers": "^5.6.2",
     "lodash": "^4.17.21",
     "rxjs": "^7.5.4",
