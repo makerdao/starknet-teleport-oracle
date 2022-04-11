@@ -63,9 +63,14 @@ async function transaction(
   server: string,
   txHash: string
 ): Promise<Transaction> {
-  const url = `https://${server}/feeder_gateway/get_transaction_receipt?transactionHash=${txHash}`;
-  const response = await axios.get(url);
-  return response.data as Transaction;
+  console.log(`Retrieving transaction ${txHash}`);
+  try {
+    const url = `https://${server}/feeder_gateway/get_transaction_receipt?transactionHash=${txHash}`;
+    const response = await axios.get(url);
+    return response.data as Transaction;
+  } catch (err) {
+    throw new Error(`Failed getting transaction ${txHash}`);
+  }
 }
 
 const MASK_250 = BigInt(2 ** 250 - 1);
@@ -107,6 +112,7 @@ function toBytes32(x: string): string {
 }
 
 export async function attestationsFromEvent(event: Event): Promise<OracleData[]> {
+  console.log("Generating attestations");
   const message = utils.defaultAbiCoder.encode(
     ["bytes32", "bytes32", "bytes32", "bytes32", "uint128", "uint80", "uint48"],
     [
@@ -137,23 +143,31 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
   }));
 }
 
+const sequencer = getRequiredEnv("STARKNET_SEQUENCER");
+console.log(`Starting oracle on ${sequencer}`);
 http.createServer(async (req, res) => {
+  console.log();
   try {
     const params = url.parse(req.url, true).query;
-    assert(params.type === "wormhole");
+    if (params.type !== "wormhole") {
+      throw new Error("Invalid type");
+    }
+    if (!params.index) {
+      throw new Error("Index not specified");
+    }
     const txHash = params.index.toString();
 
-    const sequencer = getRequiredEnv("STARKNET_SEQUENCER");
     const tx = await transaction(sequencer, txHash);
     const wormholeEvent = tx.events.filter(filterEvent)[0];
     if (!wormholeEvent) {
       throw Error("Wormhole event not found");
     }
     const attestations = await attestationsFromEvent(wormholeEvent);
+    console.log(`Sending attestations for wormhole ${attestations[0].data.hash}`);
     res.write(JSON.stringify(attestations));
     res.end();
   } catch (err) {
-    console.log(err.message);
+    console.log(`ERROR: ${err.message}`);
     res.write(JSON.stringify(null));
     res.end();
   }
