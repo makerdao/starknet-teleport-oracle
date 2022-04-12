@@ -149,7 +149,6 @@ console.log(`Starting oracle on ${sequencer}`);
 const nlogger = logger.getLogger("node_server");
 http.createServer((req, res) => {
   logger.startTracking(req, async (err, data) => {
-    console.log();
     try {
       const params = url.parse(req.url, true).query;
       if (params.type !== "wormhole") {
@@ -166,8 +165,7 @@ http.createServer((req, res) => {
         throw Error("Wormhole event not found");
       }
       const attestations = await attestationsFromEvent(wormholeEvent);
-      console.log(`Sending attestations for wormhole ${attestations[0].data.hash}`);
-      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Type", "text/json");
       res.write(JSON.stringify(attestations));
       res.end();
     } catch (err) {
