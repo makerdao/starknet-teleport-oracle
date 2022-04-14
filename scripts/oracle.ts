@@ -1,25 +1,11 @@
 import { isEqual, zip } from "lodash";
+import axios from "axios";
 import http from "http";
-import {
-  distinct,
-  distinctUntilKeyChanged,
-  filter,
-  interval,
-  map,
-  mergeMap,
-  Observable,
-  from,
-  of,
-  startWith,
-  switchMap,
-  tap,
-  combineAll,
-} from "rxjs";
-import { ajax } from "rxjs/ajax";
-import xhr from "xhr2";
+import url from "url";
 import assert from "assert";
 import { BigNumber, Wallet, utils } from "ethers";
 import { arrayify, hashMessage, keccak256 } from "ethers/lib/utils";
+import logger from "log-tracking";
 import * as dotenv from "dotenv";
 dotenv.config();
 
@@ -74,51 +60,18 @@ function getRequiredEnv(key: string): string {
   return value;
 }
 
-function transactionsFromBlock(b: Block): Array<TransactionSummary> {
-  return zip(b.transactions, b.transaction_receipts).map(
-    ([transaction, receipt]) => ({
-      ...transaction,
-      receipt,
-      parent_block_hash: b.parent_block_hash,
-    })
-  );
-}
-
-function eventsFromTransaction({
-  block_hash,
-  transaction_hash,
-  parent_block_hash,
-  events,
-  transaction_index,
-}: TransactionSummary): Array<Event> {
-  return events.map((e, i) => ({
-    block_hash,
-    parent_block_hash,
-    transaction_hash,
-    transaction_index,
-    log_index: i,
-    ...e,
-  }));
-}
-
-function block(
-  server: string,
-  blockNumber: BigInt | "pending"
-): Observable<Block> {
-  const url = `https://${server}/feeder_gateway/get_block?blockNumber=${blockNumber}`;
-  return ajax({ url, createXHR: () => new xhr() }).pipe(
-    map(({ response }) => response as Block)
-  );
-}
-
-function transaction(
+async function transaction(
   server: string,
   txHash: string
-): Observable<Transaction> {
-  const url = `https://${server}/feeder_gateway/get_transaction_receipt?transactionHash=${txHash}`;
-  return ajax({ url, createXHR: () => new xhr() }).pipe(
-    map(({ response }) => response as Transaction)
-  );
+): Promise<Transaction> {
+  console.log(`Retrieving transaction ${txHash}`);
+  try {
+    const url = `https://${server}/feeder_gateway/get_transaction_receipt?transactionHash=${txHash}`;
+    const response = await axios.get(url);
+    return response.data as Transaction;
+  } catch (err) {
+    throw new Error(`Failed getting transaction ${txHash}`);
+  }
 }
 
 const MASK_250 = BigInt(2 ** 250 - 1);
@@ -160,6 +113,7 @@ function toBytes32(x: string): string {
 }
 
 export async function attestationsFromEvent(event: Event): Promise<OracleData[]> {
+  console.log("Generating attestations");
   const message = utils.defaultAbiCoder.encode(
     ["bytes32", "bytes32", "bytes32", "bytes32", "uint128", "uint80", "uint48"],
     [
@@ -172,11 +126,14 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
 
   const oracleMnemonic = getRequiredEnv("ORACLE_MNEMONIC");
   const oracleWallet = Wallet.fromMnemonic(oracleMnemonic);
-  const { signatures } = await signWormholeData(message, [oracleWallet]);
+  const signers = [oracleWallet];
+  const { signatures } = await signWormholeData(message, signers);
   const hash = keccak256(message).slice(2);
-  return signatures.map(signature => ({
+  return signatures.map((signature, i) => ({
+    timestamp: (new Date()).getTime(),
     "signatures": {
       ethereum: {
+        signer: signers[i].address.slice(2),
         signature: signature.slice(2),
       },
     },
@@ -187,55 +144,34 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
   }));
 }
 
-function events(server: string, period = 10000) {
-  return interval(period).pipe(
-    startWith(0),
-    switchMap(() => block(server, "pending")),
-    distinctUntilKeyChanged("transactions", isEqual),
-    mergeMap((block) => of(...transactionsFromBlock(block))),
-    distinct(),
-    mergeMap((t) => of(...eventsFromTransaction(t))),
-    distinct(),
-    filter((e) => filterEvent(e)),
-    distinct(),
-    mergeMap((e) => of(attestationsFromEvent(e)))
-  );
-}
-
-
-function getParams(req) {
-  let q=req.url.split('?'),result={};
-  if(q.length>=2){
-      q[1].split('&').forEach((item)=>{
-           try {
-             result[item.split('=')[0]]=item.split('=')[1];
-           } catch (e) {
-             result[item.split('=')[0]]='';
-           }
-      })
-  }
-  return result;
-}
-
+const sequencer = getRequiredEnv("STARKNET_SEQUENCER");
+console.log(`Starting oracle on ${sequencer}`);
+const nlogger = logger.getLogger("node_server");
 http.createServer((req, res) => {
-  const params = getParams(req);
-  assert(params["type"] === "wormhole");
-  const txHash = params["index"];
-  
-  const result = from(txHash).pipe(
-    switchMap(() => transaction(alphaGoerli, txHash)),
-    mergeMap((t) => of(...eventsFromTransaction(t))),
-    filter((e) => filterEvent(e)),
-    mergeMap((e) => of(attestationsFromEvent(e))),
-    // combineAll()
-  );
+  logger.startTracking(req, async (err, data) => {
+    try {
+      const params = url.parse(req.url, true).query;
+      if (params.type !== "wormhole") {
+        throw new Error("Invalid type");
+      }
+      if (!params.index) {
+        throw new Error("Index not specified");
+      }
+      const txHash = params.index.toString();
 
-  result.subscribe(async x => {
-    const y = await x;
-    res.write(JSON.stringify(y));
-    res.end();
+      const tx = await transaction(sequencer, txHash);
+      const wormholeEvent = tx.events.filter(filterEvent)[0];
+      if (!wormholeEvent) {
+        throw Error("Wormhole event not found");
+      }
+      const attestations = await attestationsFromEvent(wormholeEvent);
+      res.setHeader("Content-Type", "text/json");
+      res.write(JSON.stringify(attestations));
+      res.end();
+    } catch (err) {
+      console.error(`ERROR: ${err.message}`);
+      res.write(JSON.stringify(null));
+      res.end();
+    }
   });
 }).listen(8080);
-
-const alphaGoerli = "alpha4.starknet.io";
-const alphaMainet = "alpha-mainnet.starknet.io";
