@@ -66,7 +66,7 @@ async function transaction(
 ): Promise<Transaction> {
   console.log(`Retrieving transaction ${txHash}`);
   try {
-    const url = `https://${server}/feeder_gateway/get_transaction_receipt?transactionHash=${txHash}`;
+    const url = `${server}/feeder_gateway/get_transaction_receipt?transactionHash=${txHash}`;
     const response = await axios.get(url);
     return response.data as Transaction;
   } catch (err) {
@@ -118,7 +118,7 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
     ["bytes32", "bytes32", "bytes32", "bytes32", "uint128", "uint80", "uint48"],
     [
       toBytes32(event.data[0]),
-      toBytes32(event.data[1]),
+      toBytes32(`${event.data[1]}0`),
       toBytes32(event.data[2]),
       toBytes32(event.data[3]),
       ...event.data.slice(4),
