@@ -8,7 +8,7 @@ dotenv.config();
 
 const ORACLE_API_URL = 'http://localhost:8080'
 
-interface WormholeGUID {
+interface TeleportGUID {
   sourceDomain: string;
   targetDomain: string;
   receiver: string;
@@ -34,26 +34,26 @@ function getRequiredEnv(key: string): string {
   return value;
 }
 
-function decodeWormholeData(wormholeData: string[]): WormholeGUID {
-  const wormholeGUID = {
-    sourceDomain: wormholeData[0],
-    targetDomain: wormholeData[1],
-    receiver: wormholeData[2],
-    operator: wormholeData[3],
-    amount: wormholeData[4],
-    nonce: wormholeData[5],
-    timestamp: wormholeData[6],
+function decodeTeleportData(teleportData: string[]): TeleportGUID {
+  const teleportGUID = {
+    sourceDomain: teleportData[0],
+    targetDomain: teleportData[1],
+    receiver: teleportData[2],
+    operator: teleportData[3],
+    amount: teleportData[4],
+    nonce: teleportData[5],
+    timestamp: teleportData[6],
   };
-  return wormholeGUID;
+  return teleportGUID;
 }
 
 async function fetchAttestations(txHash: string): Promise<{
   signatures: string,
-  wormholeGUID?: WormholeGUID,
+  teleportGUID?: TeleportGUID,
 }> {
   const response = await axios.get(ORACLE_API_URL, {
     params: {
-      type: 'wormhole',
+      type: 'teleport',
       index: txHash,
     },
   });
@@ -62,10 +62,10 @@ async function fetchAttestations(txHash: string): Promise<{
 
   const signatures = '0x' + results.map((oracle: OracleData) => oracle.signatures.ethereum.signature).join('');
 
-  let wormholeGUID = undefined;
+  let teleportGUID = undefined;
   if (results.length > 0) {
-    const wormholeData = results[0].data.event.match(/.{64}/g).map((hex: string) => `0x${hex}`);
-    wormholeGUID = decodeWormholeData(wormholeData);
+    const teleportData = results[0].data.event.match(/.{64}/g).map((hex: string) => `0x${hex}`);
+    teleportGUID = decodeTeleportData(teleportData);
   }
 
   const provider = ethers.getDefaultProvider("http://localhost:8545");
@@ -83,7 +83,7 @@ async function fetchAttestations(txHash: string): Promise<{
   );
 
   await oracleAuth.requestMint(
-    Object.values(wormholeGUID),
+    Object.values(teleportGUID),
     signatures,
     0,
     0
@@ -91,7 +91,7 @@ async function fetchAttestations(txHash: string): Promise<{
 
   return {
     signatures,
-    wormholeGUID,
+    teleportGUID,
   };
 }
 

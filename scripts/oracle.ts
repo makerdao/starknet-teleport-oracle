@@ -43,7 +43,7 @@ interface OracleData {
   }
 }
 
-interface WormholeGUID {
+interface TeleportGUID {
   sourceDomain: string;
   targetDomain: string;
   receiver: string;
@@ -85,11 +85,11 @@ function toHex(x: string) {
 
 function filterEvent(event: Event): boolean {
   return event.from_address === toHex(getRequiredEnv("WORMHOLE_GATEWAY_ADDRESS")) &&
-    event.keys[0] === getSelectorFromName("WormholeInitialized");
+    event.keys[0] === getSelectorFromName("TeleportInitialized");
 }
 
-async function signWormholeData(
-  wormholeData: string,
+async function signTeleportData(
+  teleportData: string,
   signers: any
 ): Promise<{ signHash: string; signatures: string[] }> {
   signers = signers.sort((s1: any, s2: any) => {
@@ -100,7 +100,7 @@ async function signWormholeData(
     return 0;
   });
 
-  const guidHash = keccak256(wormholeData);
+  const guidHash = keccak256(teleportData);
   const signatures = await Promise.all(
     signers.map((signer: any) => signer.signMessage(arrayify(guidHash)))
   );
@@ -131,7 +131,7 @@ export async function attestationsFromEvent(event: Event): Promise<OracleData[]>
   const oracleMnemonic = getRequiredEnv("ORACLE_MNEMONIC");
   const oracleWallet = Wallet.fromMnemonic(oracleMnemonic);
   const signers = [oracleWallet];
-  const { signatures } = await signWormholeData(message, signers);
+  const { signatures } = await signTeleportData(message, signers);
   const hash = keccak256(message).slice(2);
   return signatures.map((signature, i) => ({
     timestamp: (new Date()).getTime(),
@@ -155,7 +155,7 @@ http.createServer((req, res) => {
   logger.startTracking(req, async (err, data) => {
     try {
       const params = url.parse(req.url, true).query;
-      if (params.type !== "wormhole") {
+      if (params.type !== "teleport") {
         throw new Error("Invalid type");
       }
       if (!params.index) {
@@ -164,11 +164,11 @@ http.createServer((req, res) => {
       const txHash = params.index.toString();
 
       const tx = await transaction(sequencer, txHash);
-      const wormholeEvent = tx.events.filter(filterEvent)[0];
-      if (!wormholeEvent) {
-        throw Error("Wormhole event not found");
+      const teleportEvent = tx.events.filter(filterEvent)[0];
+      if (!teleportEvent) {
+        throw Error("Teleport event not found");
       }
-      const attestations = await attestationsFromEvent(wormholeEvent);
+      const attestations = await attestationsFromEvent(teleportEvent);
       res.setHeader("Content-Type", "text/json");
       res.write(JSON.stringify(attestations));
       res.end();
