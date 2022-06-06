@@ -84,7 +84,7 @@ function toHex(x: string) {
 }
 
 function filterEvent(event: Event): boolean {
-  return event.from_address === toHex(getRequiredEnv("WORMHOLE_GATEWAY_ADDRESS")) &&
+  return event.from_address === toHex(getRequiredEnv("TELEPORT_GATEWAY_ADDRESS")) &&
     event.keys[0] === getSelectorFromName("TeleportInitialized");
 }
 
